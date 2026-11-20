@@ -486,12 +486,13 @@ Each milestone ends with something runnable and a commit.
 - **Done when:** `make dev` starts the server and health returns 200.
 
 ### M1 — Bot joins a Meet (the riskiest part — do it first)
-- [ ] `bot/browser.go`: launch headed Chrome with chromedp (temp profile, flags from §4)
-- [ ] `bot/meet`: join flow + lobby wait + admitted/denied/blocked detection; selectors in one file
-- [ ] Leave conditions (alone / removed / max duration / stop)
-- [ ] A tiny CLI for manual testing: `go run ./cmd/joinmeet -url https://meet.google.com/...`
-- [ ] Screenshot on failure saved to `data/debug/` for diagnosis
+- [x] `bot/browser.go`: launch headed Chrome with chromedp (temp profile, flags from §4)
+- [x] `bot/meet`: join flow + lobby wait + admitted/denied/blocked detection; selectors in one file
+- [x] Leave conditions (alone / removed / max duration / stop)
+- [x] A tiny CLI for manual testing: `go run ./cmd/joinmeet -url https://meet.google.com/...`
+- [x] Screenshot on failure saved to `data/debug/` for diagnosis
 - **Done when:** the bot appears in a real Meet as a guest, is admitted, stays, and leaves when everyone else leaves.
+- **Status:** ✅ passes end-to-end against the local fake Meet (`internal/bot/meet/fakemeet`, tests in `meet_test.go`). ⏳ Still to verify against **real** Google Meet from a laptop: `go run ./cmd/joinmeet -url https://meet.google.com/...` (the cloud sandbox can't reach meet.google.com).
 - **Learn here:** whether guest join is accepted from a laptop and from Docker/Xvfb. If blocked → evaluate the signed-in-account fallback (§15).
 
 ### M2 — Audio capture

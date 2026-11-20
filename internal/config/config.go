@@ -43,19 +43,19 @@ func Load() (Config, error) {
 	_ = LoadDotEnv(".env")
 
 	c := Config{
-		HTTPAddr:           str("HTTP_ADDR", ":8080"),
-		DataDir:            str("DATA_DIR", "./data"),
-		GroqAPIKey:         str("GROQ_API_KEY", ""),
-		GroqBaseURL:        str("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-		GroqSTTModel:       str("GROQ_STT_MODEL", "whisper-large-v3-turbo"),
-		GroqSummaryModel:   str("GROQ_SUMMARY_MODEL", "openai/gpt-oss-120b"),
-		STTProvider:        str("STT_PROVIDER", ""),
-		SummaryProvider:    str("SUMMARY_PROVIDER", ""),
-		Language:           str("STT_LANGUAGE", ""),
-		ChromePath:         str("CHROME_PATH", ""),
-		BotName:            str("BOT_NAME", "Meeting Agent (Notetaker)"),
-		AllowedHosts:       list("ALLOWED_MEETING_HOSTS", []string{"meet.google.com"}),
-		DevCORS:            boolean("DEV_CORS", false),
+		HTTPAddr:         str("HTTP_ADDR", ":8080"),
+		DataDir:          str("DATA_DIR", "./data"),
+		GroqAPIKey:       str("GROQ_API_KEY", ""),
+		GroqBaseURL:      str("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+		GroqSTTModel:     str("GROQ_STT_MODEL", "whisper-large-v3-turbo"),
+		GroqSummaryModel: str("GROQ_SUMMARY_MODEL", "openai/gpt-oss-120b"),
+		STTProvider:      str("STT_PROVIDER", ""),
+		SummaryProvider:  str("SUMMARY_PROVIDER", ""),
+		Language:         str("STT_LANGUAGE", ""),
+		ChromePath:       str("CHROME_PATH", ""),
+		BotName:          str("BOT_NAME", "Meeting Agent (Notetaker)"),
+		AllowedHosts:     list("ALLOWED_MEETING_HOSTS", []string{"meet.google.com"}),
+		DevCORS:          boolean("DEV_CORS", false),
 	}
 	var err error
 	if c.LogLevel, err = level(str("LOG_LEVEL", "info")); err != nil {

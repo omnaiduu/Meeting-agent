@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meet - {{CODE}}</title>
+<style>
+  body { font-family: sans-serif; background: #202124; color: #e8eaed; margin: 0; }
+  main { padding: 32px; }
+  button { margin: 6px; padding: 8px 14px; }
+  .dialog { position: fixed; inset: 30% 30% auto 30%; background: #3c4043; padding: 16px; }
+  .tile { display: inline-block; width: 160px; height: 90px; background: #3c4043; margin: 6px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+// Built with DOM APIs only (no innerHTML): the page sends a Trusted Types CSP like Meet.
+const app = document.getElementById('app');
+const h = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const k of kids) el.append(k);
+  return el;
+};
+const span = (t) => h('span', {}, t);
+let view = '';
+let audio = null;
+
+function render(state) {
+  if (state.state === view && view !== 'in_call') return;
+  if (state.state === 'in_call' && view === 'in_call') { updateCall(state); return; }
+  view = state.state;
+  app.replaceChildren();
+  if (view === 'prejoin') prejoin();
+  if (view === 'lobby') lobby();
+  if (view === 'in_call') { inCall(state); startAudio(state); }
+  if (view === 'denied') app.append(h('h2', {}, 'Someone in the call denied your request to join'), h('button', {}, span('Ask to join again')));
+  if (view === 'ended') { stopAudio(); app.append(h('h2', {}, 'The call has ended'), h('button', {}, span('Return to home screen'))); }
+  if (view === 'left') { stopAudio(); app.append(h('h2', {}, 'You left the meeting'), h('button', {}, span('Rejoin'))); }
+}
+
+function prejoin() {
+  const input = h('input', { type: 'text', 'aria-label': 'Your name', placeholder: 'Your name' });
+  const ask = h('button', { jsname: 'Qx7uuf' }, span('Ask to join'));
+  ask.onclick = async () => {
+    await fetch('/api/knock', { method: 'POST', body: JSON.stringify({ name: input.value }) });
+  };
+  app.append(
+    h('h1', {}, 'Ready to join?'),
+    h('button', { 'aria-label': 'Turn off microphone' }, span('mic')),
+    h('button', { 'aria-label': 'Turn off camera' }, span('cam')),
+    h('div', {}, input), ask,
+  );
+  // Meet shows pop-ups that cover the join button until dismissed.
+  const dlg = h('div', { class: 'dialog', role: 'dialog' }, h('p', {}, 'Do you want people to hear you in the meeting?'));
+  const cont = h('button', {}, span('Continue without microphone and camera'));
+  cont.onclick = () => dlg.remove();
+  dlg.append(cont);
+  document.body.append(dlg);
+  ask.addEventListener('click', () => {}, { once: true });
+}
+
+function lobby() {
+  // Traps copied from real Meet: "Leave call" and "Return to home screen" exist in the lobby.
+  app.append(
+    h('h2', {}, 'Asking to be let in…'),
+    h('p', {}, 'You’ll join the call when someone lets you in'),
+    h('button', { 'aria-label': 'Leave call' }, span('call_end')),
+    h('button', {}, span('Return to home screen')),
+  );
+}
+
+function inCall(state) {
+  const toolbar = h('div', { role: 'toolbar' });
+  const people = h('button', { 'aria-label': 'People', id: 'people' }, span('People'), h('span', { id: 'count' }, String(state.participants)));
+  const leave = h('button', { 'aria-label': 'Leave call' }, span('call_end'));
+  leave.onclick = async () => { await fetch('/api/leave', { method: 'POST' }); };
+  toolbar.append(h('button', { 'aria-label': 'Present now' }, span('present')), people, leave);
+  app.append(h('div', { id: 'tiles' }), toolbar);
+  updateCall(state);
+}
+
+function updateCall(state) {
+  document.getElementById('count').textContent = String(state.participants);
+  const tiles = document.getElementById('tiles');
+  if (tiles.children.length !== state.participants) {
+    tiles.replaceChildren(...Array.from({ length: state.participants }, (_, i) => h('div', { class: 'tile', 'data-participant-id': 'spaces/x/devices/' + i })));
+  }
+  if (!state.audioOn) stopAudio();
+}
+
+// Real WebRTC: a sender and a receiver connection in the same page. The
+// receiver is created with window.RTCPeerConnection, which the bot has hooked,
+// so the bot "hears" the clip exactly as it would hear a remote participant.
+async function startAudio(state) {
+  if (audio) return;
+  audio = {};
+  const ctx = new AudioContext();
+  const buf = await ctx.decodeAudioData(await (await fetch('/speech.wav')).arrayBuffer());
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.loop = !!state.loop;
+  const dest = ctx.createMediaStreamDestination();
+  src.connect(dest);
+  const tx = new RTCPeerConnection(), rx = new RTCPeerConnection();
+  tx.onicecandidate = (e) => e.candidate && rx.addIceCandidate(e.candidate);
+  rx.onicecandidate = (e) => e.candidate && tx.addIceCandidate(e.candidate);
+  rx.ontrack = (e) => { const a = new Audio(); a.srcObject = e.streams[0] || new MediaStream([e.track]); a.muted = true; a.play().catch(() => {}); };
+  tx.addTrack(dest.stream.getAudioTracks()[0], dest.stream);
+  await tx.setLocalDescription(await tx.createOffer());
+  await rx.setRemoteDescription(tx.localDescription);
+  await rx.setLocalDescription(await rx.createAnswer());
+  await tx.setRemoteDescription(rx.localDescription);
+  src.start();
+  Object.assign(audio, { ctx, src, tx, rx });
+}
+
+function stopAudio() {
+  if (!audio || !audio.tx) return;
+  try { audio.src.stop(); } catch (e) {}
+  audio.tx.getSenders().forEach((s) => s.track && s.track.stop());
+  audio.tx.close(); audio.rx.close();
+  audio.ctx.close();
+  audio = { stopped: true };
+}
+
+async function poll() {
+  try { render(await (await fetch('/api/state')).json()); } catch (e) {}
+  setTimeout(poll, 300);
+}
+poll();
+</script>
+</body>
+</html>
