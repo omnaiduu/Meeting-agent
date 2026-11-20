@@ -51,8 +51,8 @@
 |---|---|---|
 | Platform | **Google Meet only** | Most common for demos; others later via adapter interface |
 | Approach | **Own bot**: real Chrome joins the call | Full control, no per-hour vendor fees, strong portfolio piece |
-| Backend language | **Go** (1.24+) | Single small binary, low memory, goroutines for concurrent bots |
-| Browser control | **chromedp** | Pure Go (no Node), actively maintained (v0.21.x, Nov 2026), has `ExposeFunc` to call Go from the page |
+| Backend language | **Go** (1.26) | Single small binary, low memory, goroutines for concurrent bots |
+| Browser control | **chromedp** | Pure Go (no Node), actively maintained (v0.24.0, Nov 2026), has `ExposeFunc` to call Go from the page |
 | Browser | **Real Google Chrome, headed, on Xvfb** (pinned version in Docker) | Meet blocks headless Chrome; Xvfb is an in-memory fake screen. Lightweight engines (Lightpanda) have no WebRTC |
 | Audio capture | **Injected JS** hooks `RTCPeerConnection`, mixes remote audio, sends PCM to Go | No PulseAudio/ffmpeg needed; lighter |
 | Speech-to-text | **Groq Whisper** (`whisper-large-v3-turbo`) | Fast, cheap |
@@ -467,7 +467,7 @@ make dev        # runs Go server (air or go run) + Vite dev server
 ### Docker
 Multi-stage `deploy/Dockerfile`:
 1. `node:22` → `npm ci && npm run build` (web)
-2. `golang:1.24` → `CGO_ENABLED=0 go build` (embeds `web/dist`)
+2. `golang:1.26` → `CGO_ENABLED=0 go build` (embeds `web/dist`)
 3. Runtime `debian:bookworm-slim` + **pinned Google Chrome stable** + `xvfb` + fonts (`fonts-noto`, `fonts-liberation`) → entrypoint starts `Xvfb :99` then the server.
 - Run with `--shm-size=1g` (Chrome needs shared memory).
 - Volume for `/data`.
@@ -480,9 +480,9 @@ Multi-stage `deploy/Dockerfile`:
 Each milestone ends with something runnable and a commit.
 
 ### M0 — Skeleton
-- [ ] `go mod init`, folders per §11, Makefile, `.env.example`, slog setup, config parsing
-- [ ] `GET /api/health`
-- [ ] GitHub Actions: `go build`, `go test`, `go vet`
+- [x] `go mod init`, folders per §11, Makefile, `.env.example`, slog setup, config parsing
+- [x] `GET /api/health`
+- [x] GitHub Actions: `go build`, `go test`, `go vet`
 - **Done when:** `make dev` starts the server and health returns 200.
 
 ### M1 — Bot joins a Meet (the riskiest part — do it first)
