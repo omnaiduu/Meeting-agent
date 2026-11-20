@@ -36,6 +36,8 @@ type Config struct {
 	AllowedHosts []string
 	// DevCORS enables permissive CORS for the Vite dev server.
 	DevCORS bool
+	// Headless Chrome: only for the local fake Meet (real Meet blocks headless).
+	Headless bool
 }
 
 // Load reads .env (if present, without overriding real env vars) and then the environment.

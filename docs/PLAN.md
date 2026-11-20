@@ -179,7 +179,7 @@ type Transcriber interface {
 ```
 - Implementation: **Groq** OpenAI-compatible endpoint `POST https://api.groq.com/openai/v1/audio/transcriptions`, multipart, `model=whisper-large-v3-turbo`, `response_format=verbose_json` (gives segment timestamps).
 - Segment times are shifted by the chunk's start offset so the transcript has meeting-relative timestamps.
-- A **worker pool** (small, e.g. 2 goroutines per meeting) processes chunks in order; retries with backoff on 429/5xx.
+- **One ordered worker per meeting** processes chunks (Groq returns a 20 s chunk in well under a second, so a pool isn't needed and order stays trivial); retries with backoff on 429/5xx, honoring `Retry-After`. Silent chunks are skipped; empty, `no_speech_prob > 0.6` and known Whisper hallucinations ("Thank you.", "Thanks for watching!") are dropped.
 - Each finished segment → saved to DB → published on the event hub → SSE `transcript` event.
 
 ### Summary (`internal/summarize`)
@@ -188,7 +188,7 @@ type Summarizer interface {
     Summarize(ctx context.Context, transcript string, meta MeetingMeta) (Summary, error)
 }
 ```
-- Implementation: **Groq** chat completions (`/openai/v1/chat/completions`), model from `GROQ_SUMMARY_MODEL`, **JSON mode** with this shape:
+- Implementation: **Groq** chat completions (`/openai/v1/chat/completions`), model from `GROQ_SUMMARY_MODEL`, **strict Structured Outputs** (`response_format: json_schema`, `strict: true`, supported by `openai/gpt-oss-120b`) with this shape:
 ```json
 {
   "title": "Q4 launch sync",
@@ -256,9 +256,11 @@ CREATE TABLE meetings (
   meeting_url   TEXT NOT NULL,
   meeting_code  TEXT NOT NULL,             -- e.g. abc-defg-hij
   bot_name      TEXT NOT NULL,
+  title         TEXT,                      -- from the summary
   status        TEXT NOT NULL,
   error_code    TEXT,
   error_message TEXT,
+  end_reason    TEXT,                      -- alone | meeting_over | max_duration | stopped
   created_at    DATETIME NOT NULL,
   joined_at     DATETIME,
   ended_at      DATETIME,
@@ -298,6 +300,7 @@ CREATE TABLE summaries (
 | `GET` | `/api/meetings/{id}/audio` | Download the WAV |
 | `GET` | `/api/meetings/{id}/events` | **SSE** stream |
 | `GET` | `/api/health` | Liveness |
+| `GET` | `/api/info` | Default bot name and active STT/summary providers (for the UI) |
 | `GET` | `/*` | Embedded SPA (fallback to `index.html`) |
 
 ### SSE stream
@@ -452,6 +455,9 @@ All via environment variables (load `.env` in dev).
 | `MAX_MEETING_DURATION` | `2h` | |
 | `CHUNK_SECONDS` | `20` | ≥10 |
 | `LOG_LEVEL` | `info` | |
+| `ALLOWED_MEETING_HOSTS` | `meet.google.com` | Add a local fake-Meet host for demos/tests |
+| `CHROME_HEADLESS` | `false` | Only for the fake Meet; real Meet blocks headless |
+| `STT_LANGUAGE` | — | Optional Whisper language hint, e.g. `en` |
 
 ---
 
@@ -496,24 +502,26 @@ Each milestone ends with something runnable and a commit.
 - **Learn here:** whether guest join is accepted from a laptop and from Docker/Xvfb. If blocked → evaluate the signed-in-account fallback (§15).
 
 ### M2 — Audio capture
-- [ ] `inject/capture.js` + `pcm-worklet.js`, injected before page load
-- [ ] `ExposeFunc` bridge → `audio.Buffer` → `audio.wav` on disk
+- [x] `inject/capture.js` + `pcm-worklet.js`, injected before page load
+- [x] `ExposeFunc` bridge → `audio.Buffer` → `audio.wav` on disk
 - **Done when:** after a test call, `data/meetings/{id}/audio.wav` plays back the other participants clearly.
+- **Status:** ✅ verified with the fake Meet (WebRTC loopback → 0.78 correlation with the source clip; Groq Whisper transcribes it word for word). The worklet lives inline in `capture.js` (loaded from a Blob URL) with a ScriptProcessor fallback, instead of a separate `pcm-worklet.js`.
 
 ### M3 — Transcription
-- [ ] `transcribe/groq.go` + `fake.go`, chunking every 20 s, ordered worker, retries
-- [ ] Segments saved to SQLite (sqlc + goose set up here)
+- [x] `transcribe/groq.go` + `fake.go`, chunking every 20 s, ordered worker, retries
+- [x] Segments saved to SQLite (sqlc + goose set up here)
 - **Done when:** transcript segments with correct meeting-relative timestamps are in the DB during a live call.
 
 ### M4 — API, SSE, meeting service
-- [ ] Meeting service + Bot Manager (goroutine per meeting, semaphore, recover, startup cleanup)
-- [ ] REST endpoints + SSE stream + event hub (§9)
+- [x] Meeting service + Bot Manager (goroutine per meeting, semaphore, recover, startup cleanup)
+- [x] REST endpoints + SSE stream + event hub (§9)
 - **Done when:** `curl -N /api/meetings/{id}/events` shows status changes and live transcript lines.
 
 ### M5 — Summary
-- [ ] `summarize/groq.go` with JSON mode + map/reduce for long transcripts
-- [ ] `summarizing → done` transition, `summary` SSE event
+- [x] `summarize/groq.go` with JSON mode + map/reduce for long transcripts
+- [x] `summarizing → done` transition, `summary` SSE event
 - **Done when:** finished meetings have a structured summary in the DB.
+- **Status (M3–M5):** ✅ `go test ./internal/api -run TestEndToEnd` drives HTTP → bot → fake Meet → STT → summary → SSE. With `E2E_GROQ=1` it uses real Groq (Whisper + `openai/gpt-oss-120b`) and passes.
 
 ### M6 — Dashboard
 - [ ] Vite + React + TS + TanStack Router/Query + Tailwind v4 + shadcn/ui
@@ -544,7 +552,7 @@ Each milestone ends with something runnable and a commit.
 | **Org-only meetings** (Workspace "only people in org") | Guests can't join at all | Document as a known limitation |
 | **No audio output device in container** — Web Audio may not process without one | Silent recordings | Verify in M2 under Docker; fallback: install PulseAudio with a null sink in the image |
 | **Remote audio not flowing into Web Audio** | Silent recordings | Attach each remote stream to a muted `<audio>` element (known Chrome quirk) |
-| **Groq rate limits / model ID changes** | STT/summary failures | Retries + backoff, models via env; check Groq's current models list. (Note: the Groq key in the current cloud environment returned "expired API key" — use your own key locally.) |
+| **Groq rate limits / model ID changes** | STT/summary failures | Retries + backoff, models via env; check Groq's current models list.  |
 | **Chrome memory** | Few concurrent bots on a laptop | `MAX_CONCURRENT_BOTS`; small window; no video sent |
 | **Consent / legal** | Recording without consent is illegal in many places | Clear bot name; README tells users to inform participants; host must admit the bot |
 

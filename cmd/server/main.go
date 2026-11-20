@@ -8,11 +8,20 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/omnaiduu/meeting-agent/internal/api"
+	"github.com/omnaiduu/meeting-agent/internal/bot"
+	"github.com/omnaiduu/meeting-agent/internal/bot/meet"
 	"github.com/omnaiduu/meeting-agent/internal/config"
+	"github.com/omnaiduu/meeting-agent/internal/events"
+	"github.com/omnaiduu/meeting-agent/internal/meeting"
+	"github.com/omnaiduu/meeting-agent/internal/store"
+	"github.com/omnaiduu/meeting-agent/internal/summarize"
+	"github.com/omnaiduu/meeting-agent/internal/transcribe"
+	"github.com/omnaiduu/meeting-agent/web"
 )
 
 func main() {
@@ -33,9 +42,43 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return err
+	}
+	st, err := store.Open(ctx, filepath.Join(cfg.DataDir, "meeting-agent.db"))
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	stt, sum := providers(cfg)
+	log.Info("providers", "stt", stt.Name(), "summary", sum.Name())
+
+	hub := events.NewHub()
+	svc := meeting.New(meeting.Config{DataDir: cfg.DataDir, DefaultBotName: cfg.BotName, AllowedHosts: cfg.AllowedHosts}, st, hub, log)
+	if err := svc.RecoverAfterRestart(ctx); err != nil {
+		return err
+	}
+	mgr := bot.NewManager(bot.Config{
+		MaxConcurrent: cfg.MaxConcurrentBots,
+		LobbyTimeout:  cfg.LobbyTimeout,
+		AloneTimeout:  cfg.AloneTimeout,
+		MaxDuration:   cfg.MaxMeetingDuration,
+		ChunkSeconds:  cfg.ChunkSeconds,
+		Language:      cfg.Language,
+		DebugDir:      filepath.Join(cfg.DataDir, "debug"),
+		Browser:       bot.BrowserOptions{ChromePath: cfg.ChromePath, Headless: cfg.Headless},
+	}, log, svc, stt, sum, map[string]func() bot.Platform{
+		"google_meet": func() bot.Platform { return meet.New(log) },
+	})
+	svc.SetRunner(mgr)
+
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           api.NewHandler(api.Deps{Log: log, DevCORS: cfg.DevCORS}),
+		Addr: cfg.HTTPAddr,
+		Handler: api.NewHandler(api.Deps{
+			Log: log, DevCORS: cfg.DevCORS, Meetings: svc, SPA: web.Dist(),
+			Info: api.Info{BotName: cfg.BotName, STTProvider: stt.Name(), SummaryProvider: sum.Name()},
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
@@ -52,8 +95,21 @@ func run() error {
 		return err
 	case <-ctx.Done():
 	}
-	log.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	log.Info("shutting down: asking bots to leave")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	mgr.Shutdown(shutdownCtx)
 	return srv.Shutdown(shutdownCtx)
+}
+
+func providers(cfg config.Config) (transcribe.Transcriber, summarize.Summarizer) {
+	var stt transcribe.Transcriber = transcribe.Fake{}
+	if cfg.STTProvider == "groq" {
+		stt = &transcribe.Groq{APIKey: cfg.GroqAPIKey, BaseURL: cfg.GroqBaseURL, Model: cfg.GroqSTTModel}
+	}
+	var sum summarize.Summarizer = summarize.Fake{}
+	if cfg.SummaryProvider == "groq" {
+		sum = &summarize.Groq{APIKey: cfg.GroqAPIKey, BaseURL: cfg.GroqBaseURL, Model: cfg.GroqSummaryModel}
+	}
+	return stt, sum
 }

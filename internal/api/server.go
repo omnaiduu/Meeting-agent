@@ -3,16 +3,36 @@ package api
 
 import (
 	"encoding/json"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/omnaiduu/meeting-agent/internal/meeting"
 )
 
-// Deps are the things the HTTP layer needs. Fields are filled in as milestones land.
+// Info is shown by the dashboard (which providers are active, default bot name).
+type Info struct {
+	BotName         string `json:"bot_name"`
+	STTProvider     string `json:"stt_provider"`
+	SummaryProvider string `json:"summary_provider"`
+}
+
+// Deps are the things the HTTP layer needs.
 type Deps struct {
-	Log     *slog.Logger
-	DevCORS bool
+	Log       *slog.Logger
+	DevCORS   bool
+	Meetings  *meeting.Service
+	Info      Info
+	SPA       fs.FS         // built dashboard; nil = API only
+	Heartbeat time.Duration // SSE keep-alive; default 15 s
+}
+
+type handlers struct {
+	svc       *meeting.Service
+	log       *slog.Logger
+	heartbeat time.Duration
 }
 
 // NewHandler builds the full HTTP handler with middleware.
@@ -21,6 +41,29 @@ func NewHandler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /api/info", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, d.Info)
+	})
+	if d.Meetings != nil {
+		h := &handlers{svc: d.Meetings, log: d.Log, heartbeat: d.Heartbeat}
+		if h.heartbeat == 0 {
+			h.heartbeat = 15 * time.Second
+		}
+		mux.HandleFunc("POST /api/meetings", h.create)
+		mux.HandleFunc("GET /api/meetings", h.list)
+		mux.HandleFunc("GET /api/meetings/{id}", h.get)
+		mux.HandleFunc("DELETE /api/meetings/{id}", h.delete)
+		mux.HandleFunc("GET /api/meetings/{id}/transcript", h.transcript)
+		mux.HandleFunc("POST /api/meetings/{id}/stop", h.stop)
+		mux.HandleFunc("GET /api/meetings/{id}/audio", h.audio)
+		mux.HandleFunc("GET /api/meetings/{id}/events", h.events)
+	}
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "not_found", "No such API endpoint.")
+	})
+	if d.SPA != nil {
+		mux.Handle("/", spa(d.SPA))
+	}
 
 	var h http.Handler = mux
 	if d.DevCORS {
