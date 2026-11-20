@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,10 @@ import (
 )
 
 func main() {
+	// Container healthcheck without curl in the image: meeting-agent -healthcheck
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(healthcheck())
+	}
 	if err := run(); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -67,7 +72,7 @@ func run() error {
 		ChunkSeconds:  cfg.ChunkSeconds,
 		Language:      cfg.Language,
 		DebugDir:      filepath.Join(cfg.DataDir, "debug"),
-		Browser:       bot.BrowserOptions{ChromePath: cfg.ChromePath, Headless: cfg.Headless},
+		Browser:       bot.BrowserOptions{ChromePath: cfg.ChromePath, Headless: cfg.Headless, NoSandbox: cfg.NoSandbox},
 	}, log, svc, stt, sum, map[string]func() bot.Platform{
 		"google_meet": func() bot.Platform { return meet.New(log) },
 	})
@@ -112,4 +117,24 @@ func providers(cfg config.Config) (transcribe.Transcriber, summarize.Summarizer)
 		sum = &summarize.Groq{APIKey: cfg.GroqAPIKey, BaseURL: cfg.GroqBaseURL, Model: cfg.GroqSummaryModel}
 	}
 	return stt, sum
+}
+
+func healthcheck() int {
+	addr := os.Getenv("HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	c := http.Client{Timeout: 2 * time.Second}
+	resp, err := c.Get("http://" + addr + "/api/health")
+	if err != nil {
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }

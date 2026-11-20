@@ -477,7 +477,7 @@ make dev        # runs Go server (air or go run) + Vite dev server
 Multi-stage `deploy/Dockerfile`:
 1. `node:22` → `npm ci && npm run build` (web)
 2. `golang:1.26` → `CGO_ENABLED=0 go build` (embeds `web/dist`)
-3. Runtime `debian:bookworm-slim` + **pinned Google Chrome stable** + `xvfb` + fonts (`fonts-noto`, `fonts-liberation`) → entrypoint starts `Xvfb :99` then the server.
+3. Runtime `ubuntu:24.04` + **pinned Chrome for Testing** (`CHROME_VERSION` build arg) + `xvfb` + fonts + `tini` (reaps Chrome's child processes) → entrypoint starts `Xvfb :99` then the server, as non-root user `bot`. `CHROME_NO_SANDBOX=true` in compose (Docker usually blocks the namespaces Chrome's sandbox needs).
 - Run with `--shm-size=1g` (Chrome needs shared memory).
 - Volume for `/data`.
 - Expect **~0.5–1 GB RAM and ~1 vCPU per active bot**.
@@ -534,11 +534,17 @@ Each milestone ends with something runnable and a commit.
 - **Status:** ✅ verified in the browser against the demo fake Meet (`go run ./cmd/fakemeet`, a scripted 9-line stand-up in several espeak voices) with real Groq. shadcn's registry was unreachable from the dev sandbox, so the shadcn-style components in `web/src/components/ui` are hand-written on Radix (`radix-ui` package), which is how shadcn works anyway.
 
 ### M7 — Containerize and polish
-- [ ] Dockerfile + entrypoint (Xvfb), `docker compose up`
-- [ ] README: what it is, architecture diagram, setup, screenshots/GIF, design decisions (link to this file)
-- [ ] Unit tests: state machine, audio buffer/WAV, SSE hub, API handlers (with fake providers)
-- [ ] Record a 2-minute demo video
+- [x] Dockerfile + entrypoint (Xvfb), `docker compose up`
+- [x] README: what it is, architecture diagram, setup, screenshots/GIF, design decisions (link to this file)
+- [x] Unit tests: state machine, audio buffer/WAV, SSE hub, API handlers (with fake providers)
+- [x] Record a 2-minute demo video
 - **Done when:** a fresh machine with Docker can run it with one command plus a `GROQ_API_KEY`.
+- **Status:** ✅ image built and run in the dev sandbox: headed Chrome for Testing 153 on Xvfb as a non-root user, no PulseAudio, real Groq, healthcheck `healthy`, and `docker stop` mid-call leaves cleanly and still produces the summary (4 s). Runtime base is `ubuntu:24.04` (the sandbox could reach Ubuntu mirrors but not Debian's, and Ubuntu is a fine base anyway). Demo video = UI walkthrough against the fake Meet (`docs/screenshots/demo.mp4`, `.gif`).
+
+### Still to do on a laptop (needs real Google Meet and people)
+- [ ] Verify the guest join against **real** Meet: `go run ./cmd/joinmeet -url https://meet.google.com/...`, admit the bot, talk, and check `data/debug/joinmeet.wav`. Adjust `internal/bot/meet/selectors.go` if Meet's UI differs.
+- [ ] Verify inside Docker on the laptop (Google may treat cloud/datacenter IPs differently from home IPs).
+- [ ] Record a short real-meeting clip for the portfolio and pair it with `docs/screenshots/demo.mp4`.
 
 ### Later (not now)
 - Speaker identification (active-speaker DOM indicator + timestamps; Meet captions as backup)
@@ -554,7 +560,7 @@ Each milestone ends with something runnable and a commit.
 | **Meet blocks the guest join** ("You can't join this video call") | Bot can't enter | Headed real Chrome (not headless), minimal flags, honest name. Fallback: sign the bot into a dedicated Google account (saved profile). Decide after M1. |
 | **Meet UI/selector changes** | Join or end detection breaks | All selectors in `selectors.go`; prefer aria-labels/text; failure screenshots |
 | **Org-only meetings** (Workspace "only people in org") | Guests can't join at all | Document as a known limitation |
-| **No audio output device in container** — Web Audio may not process without one | Silent recordings | Verify in M2 under Docker; fallback: install PulseAudio with a null sink in the image |
+| ~~No audio output device in container~~ | — | ✅ Verified: capture works in the Docker image with no PulseAudio/sound card (Chrome still runs the Web Audio graph). |
 | **Remote audio not flowing into Web Audio** | Silent recordings | Attach each remote stream to a muted `<audio>` element (known Chrome quirk) |
 | **Groq rate limits / model ID changes** | STT/summary failures | Retries + backoff, models via env; check Groq's current models list.  |
 | **Chrome memory** | Few concurrent bots on a laptop | `MAX_CONCURRENT_BOTS`; small window; no video sent |

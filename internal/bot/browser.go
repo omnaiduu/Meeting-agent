@@ -18,6 +18,7 @@ type BrowserOptions struct {
 	// Headless is only for tests against the local fake Meet page.
 	// Real Google Meet blocks headless Chrome, so production runs headed (on Xvfb on Linux).
 	Headless   bool
+	NoSandbox  bool // root always runs without the sandbox (Chrome requires it)
 	ExtraFlags map[string]any
 	Log        func(msg string, args ...any)
 }
@@ -54,7 +55,7 @@ func Launch(parent context.Context, o BrowserOptions) (*Browser, error) {
 		chromedp.Flag("password-store", "basic"),
 		chromedp.Flag("use-mock-keychain", true),
 	}
-	if os.Geteuid() == 0 {
+	if os.Geteuid() == 0 || o.NoSandbox {
 		opts = append(opts, chromedp.NoSandbox) // Chrome refuses to run as root with the sandbox
 	}
 	if o.Headless {

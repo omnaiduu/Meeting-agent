@@ -1,0 +1,24 @@
+# docker compose -f deploy/compose.yaml up --build
+services:
+  meeting-agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: meeting-agent
+    ports:
+      - "8080:8080"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      BOT_NAME: ${BOT_NAME:-Meeting Agent (Notetaker)}
+      MAX_CONCURRENT_BOTS: ${MAX_CONCURRENT_BOTS:-2}
+      # Chrome's sandbox needs user namespaces; most Docker setups block them.
+      CHROME_NO_SANDBOX: "true"
+    volumes:
+      - meeting-data:/data
+    shm_size: 1gb # Chrome needs more shared memory than Docker's 64 MB default
+    # On docker stop, bots leave the call, then finish transcribing and summarizing.
+    stop_grace_period: 60s
+    restart: unless-stopped
+
+volumes:
+  meeting-data:

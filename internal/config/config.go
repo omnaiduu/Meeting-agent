@@ -38,6 +38,8 @@ type Config struct {
 	DevCORS bool
 	// Headless Chrome: only for the local fake Meet (real Meet blocks headless).
 	Headless bool
+	// NoSandbox disables Chrome's sandbox (some containers can't create its namespaces).
+	NoSandbox bool
 }
 
 // Load reads .env (if present, without overriding real env vars) and then the environment.
@@ -59,6 +61,7 @@ func Load() (Config, error) {
 		AllowedHosts:     list("ALLOWED_MEETING_HOSTS", []string{"meet.google.com"}),
 		DevCORS:          boolean("DEV_CORS", false),
 		Headless:         boolean("CHROME_HEADLESS", false),
+		NoSandbox:        boolean("CHROME_NO_SANDBOX", false),
 	}
 	var err error
 	if c.LogLevel, err = level(str("LOG_LEVEL", "info")); err != nil {
