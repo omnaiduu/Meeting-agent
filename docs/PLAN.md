@@ -162,7 +162,7 @@ Injected with `page.AddScriptToEvaluateOnNewDocument` **before** Meet's own scri
 6. **Track lifecycle**: when tracks end (people leave), disconnect their source nodes. Meet reuses a small number of audio channels for the current speakers, so new tracks can appear at any time — the hook must handle late tracks.
 
 Go side (`internal/audio`):
-- `Buffer` accumulates PCM; every `CHUNK_SECONDS` (default 20 s, minimum ~10 s because Groq bills at least 10 s per request) it emits a chunk with its **start offset** in the meeting.
+- `Chunker` accumulates PCM and emits a chunk of at most `CHUNK_SECONDS` (default 20 s; ≥10 s because Groq bills at least 10 s per request) with its **start offset** in the meeting. It cuts at the **quietest 100 ms in the last 30%** of the chunk, so words aren't split across chunks.
 - `wav.Encode(pcm, 16000, 1)` → WAV bytes for upload.
 - The full recording is also appended to `data/meetings/{id}/audio.wav` (header patched on close) so a meeting can be re-transcribed later.
 - Silence detection (RMS threshold): skip sending all-silent chunks to save cost.
@@ -380,6 +380,9 @@ data: { ...summary JSON... }
 - Status badge colors: neutral (queued), blue (joining/lobby, pulsing dot), green (in call, pulsing), violet (transcribing/summarizing), green check (done), red (failed + human-readable reason and "Try again").
 - Empty, loading (skeletons), and error states for every view.
 
+### Demo mode
+`go run ./cmd/fakemeet` serves an imitation of Meet on `localhost:9090` that plays a scripted stand-up once the bot is admitted (`-deny` demos the failure state). Run the server with `ALLOWED_MEETING_HOSTS=meet.google.com,localhost:9090 CHROME_HEADLESS=true` and paste `http://localhost:9090/abc-defg-hij`.
+
 ### Frontend structure
 ```
 web/
@@ -524,10 +527,11 @@ Each milestone ends with something runnable and a commit.
 - **Status (M3–M5):** ✅ `go test ./internal/api -run TestEndToEnd` drives HTTP → bot → fake Meet → STT → summary → SSE. With `E2E_GROQ=1` it uses real Groq (Whisper + `openai/gpt-oss-120b`) and passes.
 
 ### M6 — Dashboard
-- [ ] Vite + React + TS + TanStack Router/Query + Tailwind v4 + shadcn/ui
-- [ ] Dashboard page, meeting detail page, SSE hook, dark mode, responsive layout (§10)
-- [ ] Embed `web/dist` in the Go binary
+- [x] Vite + React + TS + TanStack Router/Query + Tailwind v4 + shadcn/ui
+- [x] Dashboard page, meeting detail page, SSE hook, dark mode, responsive layout (§10)
+- [x] Embed `web/dist` in the Go binary
 - **Done when:** the whole flow works from the browser: paste link → watch live transcript → read summary.
+- **Status:** ✅ verified in the browser against the demo fake Meet (`go run ./cmd/fakemeet`, a scripted 9-line stand-up in several espeak voices) with real Groq. shadcn's registry was unreachable from the dev sandbox, so the shadcn-style components in `web/src/components/ui` are hand-written on Radix (`radix-ui` package), which is how shadcn works anyway.
 
 ### M7 — Containerize and polish
 - [ ] Dockerfile + entrypoint (Xvfb), `docker compose up`

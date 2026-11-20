@@ -82,28 +82,52 @@ type Chunk struct {
 // Duration of the chunk.
 func (c Chunk) Duration() time.Duration { return Duration(len(c.PCM)) }
 
-// Chunker cuts a continuous PCM stream into fixed-length chunks.
+// Chunker cuts a continuous PCM stream into chunks of at most d. Instead of
+// cutting at exactly d (which splits words: "one crash" became "one day." +
+// "crash..."), it cuts at the quietest 100 ms in the last Lookback of the
+// chunk, i.e. in a pause between words or sentences.
 type Chunker struct {
-	size  int
-	buf   []byte
-	total int // bytes emitted before buf
-	index int
-	emit  func(Chunk)
+	size     int
+	lookback int
+	buf      []byte
+	total    int // bytes emitted before buf
+	index    int
+	emit     func(Chunk)
 }
 
-// NewChunker emits chunks of length d.
+const frame = SampleRate / 10 * BytesPerSample // 100 ms
+
+// NewChunker emits chunks of at most d, cut at a pause within the last 30% of d.
 func NewChunker(d time.Duration, emit func(Chunk)) *Chunker {
 	size := int(d.Seconds()*SampleRate) * BytesPerSample
-	return &Chunker{size: size, emit: emit}
+	look := size * 3 / 10 / frame * frame
+	return &Chunker{size: size, lookback: look, emit: emit}
 }
 
 // Write appends PCM and emits every full chunk. Not safe for concurrent use.
 func (c *Chunker) Write(pcm []byte) {
 	c.buf = append(c.buf, pcm...)
 	for len(c.buf) >= c.size {
-		c.send(c.buf[:c.size])
-		c.buf = c.buf[c.size:]
+		cut := c.quietCut(c.buf[:c.size])
+		c.send(c.buf[:cut])
+		c.buf = c.buf[cut:]
 	}
+}
+
+// quietCut returns the byte offset of the middle of the quietest 100 ms frame
+// in the last lookback bytes of b (frame-aligned from the end).
+func (c *Chunker) quietCut(b []byte) int {
+	if c.lookback < frame {
+		return len(b)
+	}
+	best, bestRMS := len(b), math.MaxFloat64
+	for end := len(b); end-frame >= len(b)-c.lookback; end -= frame {
+		r := RMS(b[end-frame : end])
+		if r < bestRMS-1e-9 { // strictly quieter: ties keep the later cut
+			best, bestRMS = end-frame/2, r
+		}
+	}
+	return best - best%BytesPerSample
 }
 
 // Flush emits whatever is left (the end of the meeting).

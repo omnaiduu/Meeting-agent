@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,7 +62,8 @@ func (s *session) run(root context.Context) {
 	bopts.Log = func(msg string, args ...any) { s.log.Debug(msg, args...) }
 	b, err := Launch(ctx, bopts)
 	if err != nil {
-		s.m.rep.Fail(id, "chrome_launch", err.Error())
+		s.log.Error("chrome failed to start", "err", err)
+		s.m.rep.Fail(id, "chrome_launch", "Chrome could not start on the server. On Linux without a desktop, run it under Xvfb (see the README); details are in the server log.")
 		return
 	}
 	browserOpen := true
@@ -128,7 +130,8 @@ func (s *session) run(root context.Context) {
 	if err := s.platform.Prepare(b.Ctx, order.Push); err != nil {
 		finishAudio()
 		<-sttDone
-		s.m.rep.Fail(id, "chrome_crash", err.Error())
+		s.log.Error("prepare page", "err", err)
+		s.m.rep.Fail(id, "chrome_crash", "Could not set up the bot's browser tab: "+firstLine(err.Error()))
 		return
 	}
 
@@ -289,6 +292,16 @@ func joinError(err error) (code, msg string) {
 	case errors.Is(err, context.Canceled):
 		return "stopped", "Stopped."
 	default:
-		return "chrome_crash", err.Error()
+		return "chrome_crash", "The bot's browser stopped unexpectedly: " + firstLine(err.Error())
 	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
 }

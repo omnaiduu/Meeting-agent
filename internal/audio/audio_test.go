@@ -49,17 +49,45 @@ func TestChunkerOffsets(t *testing.T) {
 		c.Write(tone(1, 0.5))
 	}
 	c.Flush()
+	// Constant tone: no pause anywhere, so cuts land at the full length.
 	if len(chunks) != 3 {
 		t.Fatalf("want 3 chunks, got %d", len(chunks))
 	}
-	want := []time.Duration{0, 10 * time.Second, 20 * time.Second}
+	var total time.Duration
 	for i, ch := range chunks {
-		if ch.Offset != want[i] || ch.Index != i {
-			t.Errorf("chunk %d: offset %v index %d", i, ch.Offset, ch.Index)
+		if ch.Offset != total || ch.Index != i {
+			t.Errorf("chunk %d: offset %v (want %v) index %d", i, ch.Offset, total, ch.Index)
 		}
+		if ch.Duration() > 10*time.Second {
+			t.Errorf("chunk %d too long: %v", i, ch.Duration())
+		}
+		total += ch.Duration()
 	}
-	if d := chunks[2].Duration(); d != 5*time.Second {
-		t.Errorf("last chunk %v", d)
+	if total != 25*time.Second {
+		t.Errorf("total %v", total)
+	}
+}
+
+func TestChunkerCutsAtPause(t *testing.T) {
+	// 8.5 s speech, 0.3 s pause, then speech: the cut must land in the pause,
+	// not at 10.0 s in the middle of a word.
+	var pcm []byte
+	pcm = append(pcm, tone(8.5, 0.5)...)
+	pcm = append(pcm, make([]byte, BytesPerSecond*3/10)...)
+	pcm = append(pcm, tone(5, 0.5)...)
+	var chunks []Chunk
+	c := NewChunker(10*time.Second, func(ch Chunk) { chunks = append(chunks, ch) })
+	c.Write(pcm)
+	c.Flush()
+	if len(chunks) != 2 {
+		t.Fatalf("chunks %d", len(chunks))
+	}
+	cut := chunks[0].Duration()
+	if cut < 8500*time.Millisecond || cut > 8800*time.Millisecond {
+		t.Fatalf("cut at %v, want inside the pause (8.5–8.8 s)", cut)
+	}
+	if chunks[1].Offset != cut {
+		t.Errorf("second chunk offset %v != %v", chunks[1].Offset, cut)
 	}
 }
 

@@ -52,6 +52,18 @@ type Server struct {
 // Start launches the fake Meet on a random local port.
 func Start(s Script) *Server {
 	f := &Server{script: s, state: "prejoin"}
+	f.Server = httptest.NewServer(f.handler())
+	return f
+}
+
+// Handler returns a fake Meet as a plain handler (for a long-running demo server).
+func Handler(s Script) http.Handler {
+	f := &Server{script: s, state: "prejoin"}
+	return f.handler()
+}
+
+func (f *Server) handler() http.Handler {
+	s := f.script
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /speech.wav", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "audio/wav")
@@ -74,13 +86,17 @@ func Start(s Script) *Server {
 		json.NewEncoder(w).Encode(f.snapshot())
 	})
 	mux.HandleFunc("GET /{code}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		if f.state != "lobby" && f.state != "in_call" {
+			f.state = "prejoin" // a new visit starts a new meeting (demo server)
+		}
+		f.mu.Unlock()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		// A strict CSP like Meet's, so the bot's CSP bypass is exercised too.
 		w.Header().Set("Content-Security-Policy", "script-src 'self' 'unsafe-inline'; worker-src 'none'; require-trusted-types-for 'script'")
 		w.Write([]byte(strings.ReplaceAll(pageHTML, "{{CODE}}", r.PathValue("code"))))
 	})
-	f.Server = httptest.NewServer(mux)
-	return f
+	return mux
 }
 
 // MeetingURL returns a Meet-like URL on the fake server.

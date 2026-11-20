@@ -58,6 +58,7 @@ func Load() (Config, error) {
 		BotName:          str("BOT_NAME", "Meeting Agent (Notetaker)"),
 		AllowedHosts:     list("ALLOWED_MEETING_HOSTS", []string{"meet.google.com"}),
 		DevCORS:          boolean("DEV_CORS", false),
+		Headless:         boolean("CHROME_HEADLESS", false),
 	}
 	var err error
 	if c.LogLevel, err = level(str("LOG_LEVEL", "info")); err != nil {
