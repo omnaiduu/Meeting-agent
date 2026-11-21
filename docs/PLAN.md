@@ -550,10 +550,13 @@ Each milestone ends with something runnable and a commit.
 - Speaker identification (active-speaker DOM indicator + timestamps; Meet captions as backup)
 - Signed-in bot account, Zoom (requires Zoom app + OBF token since March 2026), Teams (guest web join)
 - Container-per-meeting `Runner`, Postgres, auth, calendar auto-join, Notion/email export, "ask this meeting" chat
+- **Self-healing selectors (idea, to discuss):** a daily canary bot joins a test meeting; on a missed rule it saves the DOM and screenshot and starts an AI coding agent (e.g. Claude Code) to update `selectors.go`, run the fake-Meet tests, and open a PR for human review. See [LIMITATIONS.md](LIMITATIONS.md#idea-keep-the-rules-fresh-automatically-not-built).
 
 ---
 
 ## 15. Risks and open questions
+
+The full list of hard-coded Meet rules and timing limits is in [LIMITATIONS.md](LIMITATIONS.md).
 
 | Risk | Impact | Mitigation |
 |---|---|---|
