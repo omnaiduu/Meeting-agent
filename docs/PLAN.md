@@ -542,6 +542,8 @@ Each milestone ends with something runnable and a commit.
 - **Status:** ✅ image built and run in the dev sandbox: headed Chrome for Testing 153 on Xvfb as a non-root user, no PulseAudio, real Groq, healthcheck `healthy`, and `docker stop` mid-call leaves cleanly and still produces the summary (4 s). Runtime base is `ubuntu:24.04` (the sandbox could reach Ubuntu mirrors but not Debian's, and Ubuntu is a fine base anyway). Demo video = UI walkthrough against the fake Meet (`docs/screenshots/demo.mp4`, `.gif`).
 
 ### Still to do on a laptop (needs real Google Meet and people)
+Details and the 2026-11-23 cloud test result (Google refused the guest from a datacenter IP before the lobby) are in [`PENDING.md`](PENDING.md).
+
 - [ ] Verify the guest join against **real** Meet: `go run ./cmd/joinmeet -url https://meet.google.com/...`, admit the bot, talk, and check `data/debug/joinmeet.wav`. Adjust `internal/bot/meet/selectors.go` if Meet's UI differs.
 - [ ] Verify inside Docker on the laptop (Google may treat cloud/datacenter IPs differently from home IPs).
 - [ ] Record a short real-meeting clip for the portfolio and pair it with `docs/screenshots/demo.mp4`.

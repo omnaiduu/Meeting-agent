@@ -146,7 +146,7 @@ deploy/           Dockerfile, entrypoint, compose
 - **Google Meet only** for now. The code has a platform adapter interface, and Teams (guest web join) is the natural next one. Zoom has required user-attributed tokens for bots since March 2026.
 - **No speaker names yet.** Meet mixes audio into a few shared channels, so "who said what" needs a different approach (active-speaker detection in the page).
 - Meetings restricted to an organization don't accept guests.
-- **The bot reads Meet's screen** (button texts and labels), so a Meet UI change can break joining. All those rules are in one file, failures save a screenshot to `data/debug/`, and every rule is listed in [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
+- **The bot reads Meet's screen** (button texts and labels), so a Meet UI change can break joining. All those rules are in one file, failures save a screenshot to `data/debug/`, and every rule is listed in [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md). What is still pending (real Meet test from a home network) is in [`docs/PENDING.md`](docs/PENDING.md).
 - **Transcript lines appear up to about 20 s late** (audio is sent in chunks), but their timestamps are accurate. 00:00 is when the bot was admitted, not when the meeting started.
 
 **Consent.** Recording people without consent is illegal in many places. The bot uses an obvious name and must be admitted by the host. Tell participants it's there.
